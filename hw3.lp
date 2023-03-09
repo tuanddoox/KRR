@@ -72,39 +72,27 @@ action(charge, ID) :- truck(ID, _, _, _, _).
 truck(ID, T + 1, location, load, charge) :- truck(ID, T, location, load, charge), do(T, ID, wait).
 
 % after (truck) move
-truck(ID, T + 1, to_location, load, charge - 1) :- truck(ID, T, from_location, load, charge), do(T, ID, move_to(to_location)).
+truck(ID, T + 1, to_location, load, C - 1) :- truck(ID, T, from_location, load, C), do(T, ID, move_to(to_location)).
 
 % after (truck) load package
-truck(ID, T + 1, location, load + 1, charge) :- truck(ID, T, location, load, charge), do(T, ID, load_package(location)).
-warehouse_state(warehouse_point, load - 1, T + 1) :- warehouse_state(warehouse_point, load, T), do(T, _, load_package(warehouse_point)), truck(_, T, warehouse_point, _, _).
+truck(ID, T + 1, location, L + 1, charge) :- truck(ID, T, location, L, charge), do(T, ID, load_package(location)).
+warehouse_state(warehouse_point, L - 1, T + 1) :- warehouse_state(warehouse_point, L, T), do(T, _, load_package(warehouse_point)), truck(_, T, warehouse_point, _, _).
 
 % after (truck) unload package
-truck(ID, T + 1, location, load - 1, charge) :- truck(ID, T, location, load, charge), do(T, ID, unload_package(location)).
-delivery_state(delivery_point, demand - 1, T + 1) :- delivery_state(delivery_point, demand, T), do(T, _, unload_package(delivery_point)), truck(_, T, delivery_point, _, _).
+truck(ID, T + 1, location, L - 1, charge) :- truck(ID, T, location, L, charge), do(T, ID, unload_package(location)).
+delivery_state(delivery_point, D - 1, T + 1) :- delivery_state(delivery_point, D, T), do(T, _, unload_package(delivery_point)), truck(_, T, delivery_point, _, _).
 
 % after (truck) charge
-truck(ID, T + 1, location, load, charge + 1) :- truck(ID, T, location, load, charge), do(T, ID, charge).
-
+truck(ID, T + 1, location, load, C + 1) :- truck(ID, T, location, load, C), do(T, ID, charge).
 
 
 % warehouse state of a warehouse does not change if not loading occured at the warehouse at a time step
 loaded(X, T) :- warehouse_state(X, _, T), do(T, _, load_package(X)), truck(_,T, X, _, _).
 warehouse_state(X, load, T + 1) :- warehouse_state(X, load, T), do(T, _, A), not A = load_package(X), not loaded(X, T).
-% warehouse_state(warehouse_point, load, T + 1) :- warehouse_state(warehouse_point, load, T), do(T, _, A), not A = load_package(warehouse_point). 
 
 % delivery state does not change if not unloading occured 
-# % predicate to check whether an unloading action occured in timestep T.
-# delivered(X, T) :- delivery(X, N, T), do(_, T, unload(X)), truck(_, T, X, _, _).
-# delivery(X, N, T + 1) :- delivery(X, N, T), do(_, T, A), not A = unload(X), not delivered(X, T).
-
-
-% time step
-% truck location
-% truck charging level
-% truck load level
-% warehouse load level
-% delivery point demand
-
+delivered(X, T) :- delivery_state(X, _, T), do(T, _, unload_package(X)), truck(_,T, X, _, _).
+delivery_state(X, demand, T + 1) :- delivery_state(X, demand, T), do(T, _, A), not A = unload_package(X), not delivered(X, T).
 
 
 % ========== CONSTRAINT ACTIONS ==========
@@ -157,8 +145,9 @@ warehouse_state(X, load, T + 1) :- warehouse_state(X, load, T), do(T, _, A), not
 
 
 % ========== GOAL REACHED ==========
-goal_reached(T) :-  delivery_state(_, D, T), D < 1, truck(ID, T, X, L, _), L < 1, charging_point(X).
-:- not goal_reached(T).
+% goal reached if all demands are met, all trucks are empty and all trucks are at a charging point
+goal_reached(T) :-  delivery_state(X, D, T), D < 1 : delivery_point(X); truck(ID, T, X, L, _), L < 1, charging_point(X) : truck_ID(ID).
+:- not goal_reached(t).
 
 
 % ========== OPTIMIZATION ==========
@@ -167,4 +156,4 @@ goal_reached(T) :-  delivery_state(_, D, T), D < 1, truck(ID, T, X, L, _), L < 1
  
 % maximise time step at charging point 
 all_truck_at_charging_point(T) :- truck(ID, T, X, _, _), charging_point(X) : truck_ID(ID).
-#maximize {1, all_truck_at_charging_point(T) : all_truck_at_charging_point(T) }.
+#maximize {1, all_truck_at_charging_point(T) : all_truck_at_charging_point(T)}.
