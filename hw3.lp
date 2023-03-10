@@ -62,6 +62,7 @@ action(load_package(X), ID) :- truck(ID, _, X, _, _).
 action(unload_package(X), ID) :- truck(ID, _, X, _, _).
 action(charge, ID) :- truck(ID, _, _, _, _).
 
+
 % ========== SEQUENCE OF ACTIONS ==========
 % Generate sequence of actions for each truck at each time step.
 1 { do(T, ID, A) : action(A, ID) } 1 :- time(T), truck(ID, _, _, _, _), T < t.
@@ -69,42 +70,41 @@ action(charge, ID) :- truck(ID, _, _, _, _).
 
 % ========== SUBSEQUENT CHANGE AFTER ACTIONS ==========
 % after (truck) wait
-truck(ID, T + 1, location, load, charge) :- truck(ID, T, location, load, charge), do(T, ID, wait).
+truck(ID, T + 1, X, L, C) :- truck(ID, T, X, L, C), do(T, ID, wait).
 
 % after (truck) move
-truck(ID, T + 1, to_location, load, C - 1) :- truck(ID, T, from_location, load, C), do(T, ID, move_to(to_location)).
+truck(ID, T + 1, Y, L, C - 1) :- truck(ID, T, X, L, C), do(T, ID, move_to(Y)).
 
 % after (truck) load package
-truck(ID, T + 1, location, L + 1, charge) :- truck(ID, T, location, L, charge), do(T, ID, load_package(location)).
-warehouse_state(warehouse_point, L - 1, T + 1) :- warehouse_state(warehouse_point, L, T), do(T, _, load_package(warehouse_point)), truck(_, T, warehouse_point, _, _).
+truck(ID, T + 1, X, L + 1, C) :- truck(ID, T, X, L, C), do(T, ID, load_package(X)).
+warehouse_state(X, WL - 1, T + 1) :- warehouse_state(X, WL, T), do(T, _, load_package(X)), truck(_, T, X, _, _).
 
 % after (truck) unload package
-truck(ID, T + 1, location, L - 1, charge) :- truck(ID, T, location, L, charge), do(T, ID, unload_package(location)).
-delivery_state(delivery_point, D - 1, T + 1) :- delivery_state(delivery_point, D, T), do(T, _, unload_package(delivery_point)), truck(_, T, delivery_point, _, _).
+truck(ID, T + 1, X, L - 1, C) :- truck(ID, T, X, L, C), do(T, ID, unload_package(X)).
+delivery_state(X, D - 1, T + 1) :- delivery_state(X, D, T), do(T, _, unload_package(X)), truck(_, T, X, _, _).
 
 % after (truck) charge
-truck(ID, T + 1, location, load, C + 1) :- truck(ID, T, location, load, C), do(T, ID, charge).
+truck(ID, T + 1, X, load, C + 1) :- truck(ID, T, X, load, C), do(T, ID, charge).
 
-
-% warehouse state of a warehouse does not change if not loading occured at the warehouse at a time step
+% warehouse state does not change if not loading occured
 loaded(X, T) :- warehouse_state(X, _, T), do(T, _, load_package(X)), truck(_,T, X, _, _).
-warehouse_state(X, load, T + 1) :- warehouse_state(X, load, T), do(T, _, A), not A = load_package(X), not loaded(X, T).
+warehouse_state(X, WL, T + 1) :- warehouse_state(X, WL, T), do(T, _, A), not A = load_package(X), not loaded(X, T).
 
 % delivery state does not change if not unloading occured 
 delivered(X, T) :- delivery_state(X, _, T), do(T, _, unload_package(X)), truck(_,T, X, _, _).
-delivery_state(X, demand, T + 1) :- delivery_state(X, demand, T), do(T, _, A), not A = unload_package(X), not delivered(X, T).
+delivery_state(X, D, T + 1) :- delivery_state(X, D, T), do(T, _, A), not A = unload_package(X), not delivered(X, T).
 
 
 % ========== CONSTRAINT ACTIONS ==========
 
 % helpful literals 
-% truck(truck id, time step, location, load level, charge level).
-% warehouse_state(warehouse point, load, time step).
-% delivery_state(delivery point, demand, time step)
+% truck(truck id, time step, location, load level, charge level). ID, T, X, L, C 
+% warehouse_state(warehouse point, load, time step). N, WL, T
+% delivery_state(delivery point, demand, time step). N, D, T
 
 % ==== move contraints ====
 % cannot move when no battery left
-:- do(T, ID, move_to(_)), truck(ID, T, _, _, B), B < 1.
+:- do(T, ID, move_to(_)), truck(ID, T, _, _, C), C < 1.
 
 % cannot swap
 :- do(T, ID, move_to(Y)), do(T, ID2, move_to(X)), edge(X, Y), edge(Y, X), ID != ID2.
@@ -114,13 +114,17 @@ delivery_state(X, demand, T + 1) :- delivery_state(X, demand, T), do(T, _, A), n
 
 % ==== load contraints ====
 % cannot load when no package at warehouse
-:- do(T, ID, load_package(X)), warehouse_state(X, N, T), truck(ID, T, X, _, _), N < 1.
+:- do(T, ID, load_package(X)), warehouse_state(X, WL, T), truck(ID, T, X, _, _), WL < 1.
 
 % cannot load when package on the truck already reached it capacity
 :- do(T, ID, load_package(X)), truck(ID, T, X, L, _), truck_capacity(_, ML), L >= ML.
 
 % cannot load at not warehouse 
-:- do(T, ID, load_package(X)), truck(ID, T, X, _, _), not warehouse_point(X).
+% DIFFERENT WAY TO WRITE THIS CONSTRAINT
+% :- do(T, ID, load_package(X)), truck(ID, T, X, _, _), not warehouse_point(X).
+:- do(T, ID, load_package(X)), truck(ID, T, X, _, _), warehouse_point(Y), not X = Y.
+% loadable(ID, T) :- warehouse_point(X) : truck(ID, T, X, _, _); do(T, ID, load_package(X)).
+% :- do(T, ID, load_package(X)), not loadable(ID, T).
 
 % ==== unload contraints ====
 % cannot unload when no package on the truck 
@@ -129,15 +133,24 @@ delivery_state(X, demand, T + 1) :- delivery_state(X, demand, T), do(T, _, A), n
 % cannot unload when no demand at delivery point
 :- do(T, ID, unload_package(X)), truck(ID, T, X, _, _), delivery_state(X, D, T), D < 1.
 
-% cannot unload at not delivery point
-:- do(T, ID, unload_package(X)), truck(ID, T, X, _, _), not delivery_point(X).
+% cannot unload at not delivery point 
+% DIFFERENT WAY TO WRITE THIS CONSTRAINT
+% :- do(T, ID, unload_package(X)), truck(ID, T, X, _, _), not delivery_point(X).
+:- do(T, ID, unload_package(X)), truck(ID, T, X, _, _), delivery_point(Y), not X = Y.
+% deliverable(ID, T) :- delivery_point(X) : truck(ID, T, X, _, _); do(T, ID, unload_package(X)).
+% :- do(T, ID, unload_package(X)), not deliverable(ID, T).
+
 
 % ==== charge contraints ====
-% cannot charge at not charging point
-:- do(T, ID, charge), truck(ID, T, X, _, _), not charging_point(X).
+% cannot charge at not charging point 
+% DIFFERENT WAY TO WRITE THIS CONSTRAINT
+% :- do(T, ID, charge), truck(ID, T, X, _, _), not charging_point(X).
+:- do(T, ID, charge), truck(ID, T, X, _, _), charging_point(Y), not X = Y.
+% chargable(ID, T) :- charging_point(X) : truck(ID, T, X, _, _); do(T, ID, charge).
+% :- do(T, ID, charge), not chargable(ID, T).
 
 % cannot overcharge
-:- do(T, ID, charge), truck(ID, T, _, _, B), truck_charge_capacity(ID, MB), B > MB.
+:- do(T, ID, charge), truck(ID, T, _, _, C), truck_charge_capacity(ID, MC), C > MC.
 
 % ==== singularity contraints ====
 % cannot have more than one truck at a node at a time
